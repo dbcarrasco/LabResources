@@ -6,7 +6,7 @@ Assignments will typically be provided as a Jupyter notebook named `AssignmentXX
 
 ## Assignment submission
 
-Please follow these instructions to work on your assignment solutions and submit them via GitHub.  "Your personal repo" here refers to the repo you used to submit the Assignment01 `README.md` file, named according to your GitHub username.
+Please follow these instructions to work on your assignment solutions and submit them via GitHub.  "Your personal repo" here refers to the repo you used to submit the Assignment01 `README.md` file—the repo named according to your GitHub username.
 
 1. Create a folder in your personal repo named for the assignment, `AssignmentXX`.
 
@@ -14,10 +14,10 @@ Please follow these instructions to work on your assignment solutions and submit
 
 2. Work on the assignment in your repo.  For each working session:
     * Open a terminal session with the assignment folder in your repo as the working directory.
-    * Activate the `bda18` `conda` environment.
+    * Activate the `bda18` conda environment.
     * Launch the Jupyter notebook server with the command: `jupyter noteboook`. This should open a tab in your default web browser with the Jupyter notebook interface, displaying content in your local assignment folder.
     * Edit the `SolutionsXX.ipynb` notebook with your solutions in new cells created below each problem.  Feel free to add and commit intermediate stages of your work as often as you like, and to push intermediate stages back to GitHub if you wish.
 
 3. When you are done working on the assignment, be sure to add and commit your final solutions (and any other resources you may have had to edit or create) in your local repo.
 4. Push your repo back to the course org using: `git push`
-5. Visit the [course org on GitHub](https://github.com/CU-BDA-2018) to make sure your content was pushed. You won't be able to view the notebook there, but you'll be able to see when the content in the relevant assignment folder in your repo was last updated.
+5. Visit the [course org on GitHub](https://github.com/CU-BDA-2018) to make sure your content was pushed. You won't be able to view the rendered notebook there, but you'll be able to see when the content in the relevant assignment folder in your repo was last updated.
