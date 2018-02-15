@@ -20,4 +20,4 @@ Please follow these instructions to work on your assignment solutions and submit
 
 3. When you are done working on the assignment, be sure to add and commit your final solutions (and any other resources you may have had to edit or create) in your local repo.
 4. Push your repo back to the course org using: `git push`
-5. Visit the [course org on GitHub](https://github.com/CU-BDA-2018) to make sure your content was pushed. You won't be able to view the rendered notebook there, but you'll be able to see when the content in the relevant assignment folder in your repo was last updated.
+5. Visit the [course org on GitHub](https://github.com/CU-BDA-2018) to make sure your content was pushed. Check to see when the content in the relevant assignment folder in your repo was last updated; the time stamp should verify that you just pushed the content. Note that GitHub will attempt to render Jupyter notebooks you upload. It does this imperfectly. Don't be concerned about visual anomalies as seen on GitHub. For grading, we pull your content to our computers and run your notebooks in real Jupyter sessions.
