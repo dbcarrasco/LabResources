@@ -121,6 +121,6 @@ if have_laplace:
     # Use results to plot a Gaussian PDF here.
 
     # Print using string formatting:
-    print('Poisson case:')
+    print('Cauchy case:')
     print('Marg. like.: {:.4e} (quad), {:.4e} (Laplace)'.format(cli.mlike, ml))
     print('Posterior mean: {:4.2f} (quad), {:4.2f} (Laplace)'.format(cli.post_mean, post_mean_l))
