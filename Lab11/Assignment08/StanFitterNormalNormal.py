@@ -38,14 +38,6 @@ from scipy import stats
 
 from stanfitter import StanFitter
 
-# try:
-#     import myplot
-#     from myplot import close_all, csavefig
-#     #myplot.tex_on()
-#     csavefig.save = False
-# except ImportError:
-#     pass
-
 
 ion()
 
@@ -69,14 +61,14 @@ yvals = samp_distn.rvs(N)
 
 mu0 = 0.  # prior mean
 w0 = 10.  # prior width
-w = 1./sqrt(N)  # likelihood width
+w = 1. /sqrt(N)  # likelihood width
 ybar = mean(yvals)  # likelihood location
-B = w**2/(w**2 + w0**2)  # shrinkage factor
-mu_post = ybar + B*(mu0 - ybar)
-sig_post = w*sqrt(1.-B)
+B = w**2 /(w**2 + w0**2)  # shrinkage factor
+mu_post = ybar + B *(mu0 - ybar)
+sig_post = w *sqrt(1. -B)
 post = stats.norm(mu_post, sig_post)
 
-mu_l, mu_u = mu_post - 4.*sig_post, mu_post + 4.*sig_post
+mu_l, mu_u = mu_post - 4. *sig_post, mu_post + 4. *sig_post
 mu_vals = linspace(mu_l, mu_u, 300)
 pdf_vals = post.pdf(mu_vals)
 
@@ -111,11 +103,11 @@ model {
 # time if the script is re-run without any Stan code changes.
 fitter = StanFitter(normal_mu_code)
 # Alternatively, the Stan code can be in a separate .stan file:
-#fitter = StanFitter('NormalNormal.stan')  
+#fitter = StanFitter('NormalNormal.stan')
 
 
 # Stan requires a dictionary providing the data.
-normal_mu_data = {'N': N,  'y': yvals}
+normal_mu_data = {'N': N, 'y': yvals}
 
 # The data could have been provided to StanFitter; the set_data() method
 # enables using the same model to fit multiple datasets.
@@ -133,19 +125,19 @@ fit = fitter.sample(n_iter=1000, n_chains=4)
 # Print textual summaries for the parameters monitored by Stan (the model
 # parameter mu, and the log posterior PDF, log_p).  These include basic
 # (minimal) convergence and mixing diagnostics.
-print
-print fit.mu
-print fit.log_p
+print()
+print(fit.mu)
+print(fit.log_p)
 
 # Also check convergence & mixing by examining trace plots,
 # making sure there are no obvious trends or strong, long-range correlations.
 # Use each parameter's trace() method to plot the trace on an existing set of
 # axes, or to create a new figure with the parameter's traceplot.
-f=figure(figsize=(10,8))
-ax=f.add_subplot(2,1,1)
-fit.mu.trace(axes=ax,alpha=.6)  # without `axes`, this will make its own fig
-ax=f.add_subplot(2,1,2)
-fit.log_p.trace(axes=ax,alpha=.6)
+f=figure(figsize=(10, 8))
+ax=f.add_subplot(2, 1, 1)
+fit.mu.trace(axes=ax, alpha=.6)  # without `axes`, this will make its own fig
+ax=f.add_subplot(2, 1, 2)
+fit.log_p.trace(axes=ax, alpha=.6)
 
 # Stan's default plot, showing a (marginal) PDF (via KDE) and a merged-chains
 # trace plot:
@@ -158,7 +150,7 @@ pdf_ax.plot(mu_vals, pdf_vals, 'g--', lw=3, alpha=.7)
 
 #-------------------------------------------------------------------------------
 # Test cases; note they will sometimes (rarely) fail even for correct
-# code.  If the 'return' statements are changed to 'assert', these 
+# code.  If the 'return' statements are changed to 'assert', these
 # become valid nose test cases, but nose appears to have issues with PyStan
 # and/or matplotlib.
 
@@ -168,7 +160,8 @@ def test_post_mean():
     Check that Stan's posterior mean matches the analytical mean to within
     3* the standard error.  This should fail ~< 1% of the time.
     """
-    return abs(fit.mu.mean - mu_post)/fit.mu.se_mean < 3.
+    return abs(fit.mu.mean - mu_post) /fit.mu.se_mean < 3.
+
 
 def test_intvl():
     """
@@ -178,6 +171,7 @@ def test_intvl():
     lo, hi = fit.mu.q025, fit.mu.q975  # quantile attributes
     return (mu > lo) and (mu < hi)
 
+
 def test_Rhat():
     """
     Test that the chain appears to have converged.  This can fail with
@@ -186,7 +180,7 @@ def test_Rhat():
     return abs(fit.mu.Rhat - 1.) < 0.05  # slightly more strict than 0.1 convention
 
 
-print '********************************'
-print 'Test results (should be 3*True):'
-print test_post_mean(), test_intvl(), test_Rhat()
-print '********************************\n'
+print('********************************')
+print('Test results (should be 3*True):')
+print(test_post_mean(), test_intvl(), test_Rhat())
+print('********************************\n')

@@ -73,17 +73,10 @@ if plat_sys == 'Windows':
     # compiler = msvc
     # For the config file name and location (local and global choices), see:
     #   https://docs.python.org/2/install/#distutils-configuration-files
-    import setuptools, pystan
+    import setuptools
+    import pystan
 else:
     import pystan
-
-try:
-    import myplot
-    from myplot import close_all, csavefig
-    #myplot.tex_on()
-    csavefig.save = False
-except ImportError:
-    pass
 
 
 ion()
@@ -116,15 +109,15 @@ yvals = samp_distn.rvs(N)
 # Analytical posterior for conjugate normal-normal:
 mu0 = 0.  # prior mean
 w0 = 10.  # prior width
-w = 1./sqrt(N)  # likelihood width
+w = 1. /sqrt(N)  # likelihood width
 ybar = mean(yvals)  # likelihood location
-B = w**2/(w**2 + w0**2)  # shrinkage factor
-mu_post = ybar + B*(mu0 - ybar)
-sig_post = w*sqrt(1.-B)
+B = w**2 /(w**2 + w0**2)  # shrinkage factor
+mu_post = ybar + B *(mu0 - ybar)
+sig_post = w *sqrt(1. -B)
 post_pdf = stats.norm(mu_post, sig_post)
 
 # Stan requires a dictionary providing the data.
-normal_mu_data = {'N': N,  'y': yvals}
+normal_mu_data = {'N': N, 'y': yvals}
 
 # Run 4 chains of 1000 iters; Stan keeps the last half of each -> 2k samples.
 if plat_sys == 'Windows':
@@ -139,8 +132,8 @@ else:
 # Samples in an array of three dimensions: [iteration, chain, parameter]
 samples = fit.extract(permuted=False)
 n_iter, n_ch, n_p1 = samples.shape
-mu_traces = samples[:,:,0]
-logp_traces = samples[:,:,-1]  # log(pdf) of the samples is also available, last
+mu_traces = samples[:, :, 0]
+logp_traces = samples[:, :, -1]  # log(pdf) of the samples is also available, last
 
 # Summaries from samples:
 raw_summary = fit.summary()
@@ -151,17 +144,17 @@ mu_cr95 = (mu_summaries[3], mu_summaries[7])  # boundaries of central 95% region
 ESS = mu_summaries[8]  # ESS from all post-warmup samples
 Rhat = mu_summaries[9]  # pot'l scale reduction convergence diagnostic
 
-print '\n\n***** Stan fit results *****'
-print 'True mean:         {:.3f}'.format(mu)
-print 'An. post. mean:    {:.3f}'.format(mu_post)
-print 'Stan post. mean:   {:.3f} +- {:.3f} (MSE)'.format(mu_mean, mu_mean_se)
-print '95% central region: [{:.2f}, {:.2f}]'.format(*mu_cr95)
-print 'ESS = {}, Rhat = {:.2f}'.format(ESS, Rhat)
-print '****************************\n'
+print('\n\n***** Stan fit results *****')
+print('True mean:         {:.3f}'.format(mu))
+print('An. post. mean:    {:.3f}'.format(mu_post))
+print('Stan post. mean:   {:.3f} +- {:.3f} (MSE)'.format(mu_mean, mu_mean_se))
+print('95% central region: [{:.2f}, {:.2f}]'.format(*mu_cr95))
+print('ESS = {}, Rhat = {:.2f}'.format(ESS, Rhat))
+print('****************************\n')
 
 
 # Test cases; note they will sometimes (rarely) fail even for correct
-# code.  If the 'return' statements are changed to 'assert', these 
+# code.  If the 'return' statements are changed to 'assert', these
 # become valid nose test cases, but nose appears to have issues with PyStan
 # and/or matplotlib.
 
@@ -171,7 +164,8 @@ def test_post_mean():
     Check that Stan's posterior mean matches the analytical mean to within
     3* the standard error.  This should fail ~< 1% of the time.
     """
-    return abs(mu_mean - mu_post)/mu_mean_se < 3.
+    return abs(mu_mean - mu_post) /mu_mean_se < 3.
+
 
 def test_intvl():
     """
@@ -181,6 +175,7 @@ def test_intvl():
     lo, hi = mu_cr95
     return (mu > lo) and (mu < hi)
 
+
 def test_Rhat():
     """
     Test that the chain appears to have converged.  This can fail with
@@ -189,25 +184,25 @@ def test_Rhat():
     return abs(Rhat - 1.) < 0.05  # slightly more strict than 0.1 convention
 
 
-print '****************************'
-print 'Test results (should be 3*True):', test_post_mean(), test_intvl(), test_Rhat()
-print '****************************\n'
+print('****************************')
+print('Test results (should be 3*True):', test_post_mean(), test_intvl(), test_Rhat())
+print('****************************\n')
 
 
 print(fit)  # Stan's textual summary
 
 
 # Plot the traces for mu and log(p).
-figure(figsize=(12,8))
+figure(figsize=(12, 8))
 mu_ax = subplot(211)
 logp_ax = subplot(212)
 
 for j in range(n_ch):
-    mu_ax.plot(mu_traces[:,j], alpha=.5)  # alpha to see overlapping traces
+    mu_ax.plot(mu_traces[:, j], alpha=.5)  # alpha to see overlapping traces
 mu_ax.set_ylabel('$\mu$')
 
 for j in range(n_ch):
-    logp_ax.plot(mu_traces[:,j], alpha=.5)
+    logp_ax.plot(mu_traces[:, j], alpha=.5)
 logp_ax.set_ylabel('$\log(p)$')
 logp_ax.set_xlabel('Iteration')
 
