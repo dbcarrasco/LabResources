@@ -8,12 +8,20 @@ https://pystan.readthedocs.org/en/latest/getting_started.html
 
 Created 2014-11-04 by Tom Loredo
 2015-04-17:  Modified for BDA class
+2018-01-02:  Modified for PyStan API updates (using v2.17)
+2018-01-02:  Modified for Python 2 and 3 compatibility
 """
+from __future__ import division
+from __future__ import print_function
+from six.moves import xrange
 
-import cPickle, glob
+import pickle, glob
+import datetime, timeit
 from hashlib import md5
+from collections import Mapping, OrderedDict
 
 import numpy as np
+from numpy import random
 import matplotlib.pyplot as plt
 
 import platform
@@ -36,6 +44,68 @@ else:
 __all__ = ['StanFitter']
 
 
+# ImmutableAttrDict based on discussion from:
+# http://stackoverflow.com/questions/9997176/immutable-dictionary-only-use-as-a-key-for-another-dictionary
+
+class ImmutableAttrDict(Mapping):
+    """
+    A dict-like container providing item access both through the usual dict
+    interface, and through object attributes.  Once set, items are immutable.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self._odict = OrderedDict(*args, **kwargs)  # will copy an input dict
+        # Copy items to __dict__ so they're discoverable by IPython.
+        for key, value in self._odict.items():
+            if key in self.__dict__:
+                raise ValueError('Key collision!')
+            self.__dict__[key] = value
+
+    def _asdict(self):
+        """
+        Return a new OrderedDict holding the (key, value) pairs.
+        """
+        return OrderedDict(self._odict)
+
+    def __getitem__(self, key):
+        return self._odict[key]
+
+    def __len__(self):
+        return len(self._odict)
+
+    def __iter__(self):
+        return iter(self._odict)
+
+    def __eq__(self, other):
+        return self._odict == other._odict
+
+    def __getattr__(self, name):
+        try:
+            return self._odict[name]
+        except KeyError:  # access other mapping methods
+            return getattr(self._odict, name)
+
+    def __setattr__(self, name, value):
+        if name == '_odict':
+            self.__dict__['_odict'] = value
+        elif name in self._odict:
+            raise TypeError('Existing attributes may not be altered!')
+        else:
+            if name in self.__dict__:
+                raise ValueError('Key collision!')
+            self._odict[name] = value
+            # Copy to __dict__ so it's discoverable by IPython.
+            self.__dict__[name] = value
+
+    # def __delattr__(self, name):
+    #     del self._od[name]
+
+
+
+# TODO: Rework ParamHandler to avoid self.__dict__ = self; see:
+# http://stackoverflow.com/questions/25660358/accessing-ordereddict-keys-like-attributes-in-python
+# See ParamValueContainer above.
+
 class ParamHandler(dict):
     """
     A container and handler for posterior sample data for a scalar parameter.
@@ -47,12 +117,27 @@ class ParamHandler(dict):
     """
 
     def __init__(self, *args, **kwargs):
-        if not kwargs.has_key('fit'):
+        if 'fit' not in kwargs:
             raise ValueError('fit argument required!')
-        if not kwargs.has_key('name'):
+        if 'name' not in kwargs:
             raise ValueError('name argument required!')
         super(ParamHandler, self).__init__(*args, **kwargs)
+        # NOTE:  The following works only because the dict superclass is
+        # implemented in C, with special members in a struct rather than
+        # a __dict___, so they remain accessible from self.
         self.__dict__ = self
+
+    def subsample(self, n):
+        """
+        Return a random subsample of size n from the merged, thinned chains.
+
+        Note that calling this separately for different parameters will not
+        produced a set of parameter vectors from the posterior; the parameter
+        values will be from different times in the (thinned) chains.
+        """
+        if n > len(self.thinned):
+            raise ValueError('Requested sample size > thinned chain length!')
+        return random.choice(self.thinned, n, replace=False)
 
     def trace(self, chain=None, step=True, axes=None,
                     xlabel=None, ylabel=None, **kwds):
@@ -107,7 +192,7 @@ class ParamHandler(dict):
                 fmt = '.2f'  # log_p scale is absolute, ~1. per param
             else:
                 fmt = '.3g'
-        s = 'Parameter <{}> summary\n'.format(self.name)
+        s = 'Parameter <{}> summary:\n'.format(self.name)
         s += 'Convergence and mixing diagnostics:  '
         s += 'Rhat = {:.2f}, ESS = {:d}\n'.format(self.Rhat, int(self.ess))
         s += 'Mean (se), median, sd:  {:{fmt}} ({:{fmt}}),  {:{fmt}},  {:{fmt}}\n'.format(
@@ -122,7 +207,7 @@ class ParamHandler(dict):
 
 def fitparams2attrs(fit, obj):
     """
-    Extract parameter space info from a Stan fit object, storing it as
+    Extract parameter space info from a Stan fit object, storing it in
     attributes of the passed object `obj`.
 
     Extracted info includes (by attribute name):
@@ -137,6 +222,9 @@ def fitparams2attrs(fit, obj):
         unless there is a collision with one of the initial attributes of
         the instance, in which case an underscore is appended to the name
     """
+    # The _get... methods used here are used in pystan.model.StanModel, but
+    # only *after* sampling or optimizing, and their results are not exposed
+    # after optimizing.
     obj.par_names = fit._get_param_names()  # unicode param names
     obj.par_dims = {}
     for name, dim in zip(obj.par_names, fit._get_param_dims()):
@@ -163,8 +251,9 @@ def fitparams2attrs(fit, obj):
     # del obj.par_indx['lp__']
 
     # Collect attribute names for storing param info, protecting from name
-    # collision in this namespace.
-    # *** This doesn't protect against subsequent collision/overwriting. ***
+    # collision in the namespace of `obj`.
+    # *** This doesn't protect against subsequent collision/overwriting of
+    # parameter attributes by subsequent values. ***
     # TODO:  Make sure all needed class attributes are defined before this
     # runs, or otherwise protected.
     par_attr_names = {}
@@ -173,11 +262,12 @@ def fitparams2attrs(fit, obj):
             name_ = name + '_'
             if hasattr(obj, name_):
                 raise ValueError('Cannot handle param name collision!')
-            print '*** Access param "{0}" via "{0}_". ***'.format(name)
+            print('*** Access param "{0}" via "{0}_". ***'.format(name))
             par_attr_names[name] = name_
         else:
             par_attr_names[name] = name
     obj.par_attr_names = par_attr_names
+
 
 
 class StanFitResults:
@@ -216,6 +306,7 @@ class StanFitResults:
         """
         self.fitter = fitter
         self.fit = stan_fit
+        self.when = datetime.datetime.now()
         fitparams2attrs(stan_fit, self)
         self._get_table_info()
         self._gather_sample_results()
@@ -224,9 +315,13 @@ class StanFitResults:
         """
         Get information about the summary table from a fit to the current data.
 
-        This information (largely dimensional/indexing) does not actually
-        require a fit to be done, but it is only available from Stan post-fit.
+        This information (largely dimensional/indexing) is in principle
+        available once the model and data are both defined, but it is only
+        available from Stan post-fit.
         """
+        # TODO:  Some of this info might be better to get from fit.fit.sim
+        # vs. from the summary table.
+
         # Collect info from the fit that shouldn't change if the fit is
         # re-run.
         self.raw_summary = self.fit.summary()  # dict of fit statistics (Rhat, ess...)
@@ -236,52 +331,67 @@ class StanFitResults:
         self.col_indices = {}
         for i, name in enumerate(self.sum_cols):
             self.col_indices[name] = i
-        # Row names list the parameters; convert from an ndarray to a list.
+        # Row names list the parameters & lp__; convert from an ndarray to a list.
         self.sum_rows = [name for name in self.raw_summary['summary_rownames']]
-        # Get indices for params; for vectors store the offset for 0th entry.
-        self.par_indices = {}
-        for name in self.par_names:
-            if not self.par_dims[name]:  # scalar param
-                self.par_indices[name] = self.sum_rows.index(name)
-            else:  # vector
-                self.par_indices[name] = self.sum_rows.index(name+'[0]')
 
-    def _make_param_handler(self, name, row=None, item=None, log_p=False):
+        # dict giving row number for each param item:
+        self.item_indx = OrderedDict()
+        for i, name in enumerate(self.sum_rows):
+            self.item_indx[name] = i
+
+    def _make_param_handler(self, name=None, indx=None, log_p=False):
         """
         Create a ParamHandler instance for parameter name `name` and make
-        it an attribute, using data from (row,col) in the fit summary table.
+        it an attribute, using data from (row,item) in the fit summary table.
 
-        Call with (name, row) for a scalar parameter.
+        `name` should be the *base* name, i.e., excluding the index if the
+        parameter is a vector or array.
 
-        Call with (name, row, item) for an element of a vector parameter.
+        Call with (name) for a scalar parameter.
 
-        Call with (name, log_p=True) for log(prob).
+        Call with (name, indx) for an element of a vector/matrix/array
+        parameter.
+
+        Call with (log_p=True) for log(prob).
         """
+        # TODO:  This gets data from the raw_summary table; rewrite to get it
+        # from the self.fit.sim dict???
+
         # Set the key to use for Stan table lookups.
         if log_p:
             key = 'lp__'
-            row = -1
         else:
             key = name
 
-        # Scalars and vectors handle names differently; vectors use `item`.
-        if item is None:  # scalar case
-            pname = name  # name to store in the handler
-            prow = row
-            samples = self.samples[key]
-            chains = self.chains[:,:,self.par_indx[key]]
-        else:  # vector case
-            pname = name + '[%i]' % item
-            prow = row + item
-            samples = self.samples[key][:,item]
-            chains = self.chains[:,:,self.par_indx[key]+item]
+        # Scalars and vectors handle names differently; vectors use `indx`.
+        if indx is None:  # scalar case, including log_p
+            fname = name  # full name to store in the handler
+            permuted = self.permuted[key]
+            row = self.sum_rows.index(key)
+            chains = self.chains[:,:,row]
+        else:  # array case
+            s_indx = [str(i) for i in indx]
+            fname = name + '[' + ','.join(s_indx) + ']'
+            row = self.sum_rows.index(fname)
+            chains = self.chains[:,:,row]
+            # We want something like self.permuted[key][:,indx], except the
+            # last slice isn't valid syntax.
+            # Get permuted samples but with 1st axis last, to make it easy to
+            # grab a row of a multidimen array.
+            axes = list(range(len(indx)+1))  # +1 for the sample dimen
+            axes = axes[1:] + axes[:1]
+            swapped = self.permuted[key].transpose(*axes)
+            permuted = swapped[indx]
 
-        param = ParamHandler(fit=self.fit, name=pname)
-        param['samples'] = samples
-        param['chains'] = chains
+            # TODO: Is there a better way to do that using a full slice made
+            # using slice(None), or a multi_index?
+
+        param = ParamHandler(fit=self.fit, name=fname)
+        param['permuted'] = permuted  # a 1-D chain, but correlations hidden
+        param['chains'] = chains  # stored as chains[t,c] = time t in chain c
         for stat in self.sum_cols:
             col = self.col_indices[stat]
-            param[self.col_map[stat]] = self.summary[prow,col]
+            param[self.col_map[stat]] = self.summaries[row,col]
         # 95% central credible interval:
         param['intvl95'] = (param['q025'], param['q975'])
         return param
@@ -290,44 +400,104 @@ class StanFitResults:
         """
         Define attributes holding results from the current fit.
         """
+        # Get data from the fit results using .extract, from 'stanfit4model.pyx'.
+
         # Extract chains, kept separate and ordered (permuted=False), with
-        # burn-in discarded (inc_warmup=False), as an array indexed as
+        # burn-in discarded (inc_warmup=False, default), as an array indexed as
         # [sample #, chain #, param #]; note that log_p is added to the end
-        # of the param list.
+        # of the param list.  This is an array.
         self.chains = self.fit.extract(permuted=False)
+
         # Collect samples from the chains, merged via random permutation
         # (permuted=True), with burn-in discarded (inc_warmup=False), as a
-        # param-keyed dict.
-        self.samples = self.fit.extract(permuted=True)
-        self.summary = self.raw_summary['summary']
+        # param-keyed dict.  This is an OrderedDict.
+        self.permuted = self.fit.extract(permuted=True)
+        self.summaries = self.raw_summary['summary']
 
         # Populate namespace with handlers for each param, holding
-        # various data from the fit.
+        # various data from the fit.  Collect ESS & Rhat vals (but
+        # not for log_p).
+        self.esses = []
+        self.Rhats = []
         for name in self.par_names:
             attr_name = self.par_attr_names[name]
-            row = self.par_indices[name]
-            if not self.par_dims[name]:  # scalar param
-                param = self._make_param_handler(name, row)
+            if not self.par_dims[name]:  # scalar param case
+                param = self._make_param_handler(name)
                 setattr(self, attr_name, param)
-            elif len(self.par_dims[name]) == 1:  # vector param as list attr
-                l = []
-                for i in xrange(self.par_dims[name][0]):
-                    param = self._make_param_handler(name, row, i)
-                    l.append(param)
-                setattr(self, attr_name, l)
-            else:
-                # Could just direct user to summary attribute...
-                raise NotImplementedError('Only scalar & vector params supported!')
+                self.esses.append(param.ess)
+                self.Rhats.append(param.Rhat)
+            else:  # vector/array cases - build an obj array of param instances
+                a = np.empty(self.par_dims[name], np.object)
+                for indx in np.ndindex(*self.par_dims[name]):
+                    param = self._make_param_handler(name, indx)
+                    a[indx] = param
+                    self.esses.append(param.ess)
+                    self.Rhats.append(param.Rhat)
+                setattr(self, attr_name, a)
+        self.esses = np.array(self.esses)
+        self.Rhats = np.array(self.Rhats)
+
+        # Get minimum ESS, to guide thinning.
+        self.min_ess = self.esses.min()
 
         # Make a handler for log_p, the last "parameter" in the Stan table.
         param = self._make_param_handler('log_p', log_p=True)
         setattr(self, 'log_p', param)
-        param['chain'] = self.samples['lp__']
-        for stat in self.sum_cols:
-            col = self.col_indices[stat]
-            param[self.col_map[stat]] = self.summary[-1,col]
-        # 95% central credible interval:
-        param['intvl95'] = (param['q025'], param['q975'])
+        self.min_ess = min(self.min_ess, param.ess)
+
+        # Provide samples merged from thinned chains.  These are views of
+        # the chains; the data are not copied.
+        clen, nc, npar = self.chains.shape  # chain length, # chains, # params
+        tb = self.thinned_by = int(np.ceil(clen / self.min_ess))
+        for name in self.par_names:
+            attr_name = self.par_attr_names[name]
+            if not self.par_dims[name]:  # scalar param
+                param = getattr(self, attr_name)
+                # Note that a chain is a *column*, not a row.
+                thinned = param.chains[::tb,:]
+                param.thinned = np.ravel(thinned, order='F')
+            elif len(self.par_dims[name]) == 1:  # vector param as list
+                params = getattr(self, attr_name)
+                for param in params:
+                    thinned = param.chains[::tb,:]
+                    param.thinned = np.ravel(thinned, order='F')
+        param = getattr(self, 'log_p')
+        thinned = param.chains[::tb,:]
+        param.thinned = np.ravel(thinned, order='F')
+        self.n_thinned = param.thinned.shape[0]
+
+    def subsample_indices(self, n):
+        """
+        Return a set of indices defining a random subsample of size n from the
+        merged, thinned chains.
+        """
+        if n > self.n_thinned:
+            raise ValueError('Requested sample size > thinned chain length!')
+        return random.choice(self.n_thinned, n)
+
+    def point(self, i):
+        """
+        Return a point in parameter space corresponding to sample `i` in the
+        thinned, merged chain for each parameter.  The point is returned as an
+        object with both a dict and an attribute interface to the parameter
+        values, accessed by parameter name.
+        """
+        if i > self.n_thinned:
+            raise ValueError('Requested sample is beyond thinned chain length!')
+        d = {}
+        for name in self.par_names:
+            attr_name = self.par_attr_names[name]
+            if not self.par_dims[name]:  # scalar param
+                param = getattr(self, name)
+                d[attr_name] = param.thinned[i]
+            elif len(self.par_dims[name]) == 1:  # vector param as list
+                params = getattr(self, attr_name)
+                l = []
+                for param in params:
+                    l.append(param.thinned[i])
+                d[attr_name] = np.array(l)
+        d['log_p'] = getattr(self, 'log_p').thinned[i]
+        return ImmutableAttrDict(d)
 
     def log_prob_upar(self, upar_array, adjust_transform=False):
         """
@@ -371,9 +541,6 @@ class StanFitter:
     """
     Helper class for PyStan model fitting, providing automatic caching of
     a model, and easy access to fit results via attributes.
-
-    Only scalar and vector parameters are supported; in particular,
-    matrix-valued parameters are not currently supported.
     """
 
     def __init__(self, source, data=None, n_chains=None, n_iter=None, 
@@ -451,12 +618,12 @@ class StanFitter:
         files = glob.glob(cache_path)
         if files:
             cache_path = files[0]
-            self.name, self.id, self.model = cPickle.load(open(files[0], 'rb'))
-            print 'Using cached StanModel from {}...'.format(files[0])
+            self.name, self.id, self.model = pickle.load(open(files[0], 'rb'))
+            print('Using cached StanModel from {}...'.format(files[0]))
         else:
             self.model = pystan.StanModel(model_code=self.code)
             with open(cache_path, 'wb') as f:
-                cPickle.dump((self.name, self.id, self.model), f)
+                pickle.dump((self.name, self.id, self.model), f)
 
     def set_n_jobs(self, n_jobs):
         """
@@ -470,18 +637,24 @@ class StanFitter:
         else:
             self.n_jobs = n_jobs
 
-    def set_data(self, data):
+    def set_data(self, data, seed=None):
         """
-        Set the data info dictionary, and collect info about parameters for an
-        application of the model to the dataset.
+        Set the data info dictionary, collect info about parameters for an
+        application of the model to the dataset, and initialize Stan's RNG.
 
-        Note that since hierarchical models are supported by Stan, the
+        `seed` should be an `int` between 0 and MAX_UINT, inclusive, or NumPy's
+        `np.random.RandomState`, whose `randint` method will be used to get
+        a seed.  If `seed` is None, a random seed will be used.
+
+        Note that since Stan supports hierarchical models, the
         parameter space may not be completely defined until a dataset is
         specified (the dataset size determines the number of latent
         parameters in hierarchical models).
         """
         self.data = data
-        self.fit = self.model.fit_class(self.data)
+        # Note: fit_class API changed to require seed after PyStan-2.14.
+        seed = pystan.misc._check_seed(seed)
+        self.fit = self.model.fit_class(self.data, seed)
         fitparams2attrs(self.fit, self)
 
     def sample(self, n_iter=None, n_chains=None, data=None, **kwds):
@@ -508,13 +681,34 @@ class StanFitter:
            self.n_chains = n_chains
         self.n_iter = n_iter
         # The actual fit!
+        start_time = timeit.default_timer()
         fit = self.model.sampling(data=self.data, chains=self.n_chains,
                   iter=self.n_iter, n_jobs=self.n_jobs, **kwds)
+        elapsed = timeit.default_timer() - start_time
         # fit = pystan.stan(fit=self.fit, data=self.data, chains=self.n_chains,
         #                        iter=self.n_iter, **kwds)
 
         # *** Consider gathering model info from the 1st fit to a data set
         # here, e.g., as in _get_table_info().
 
-        return StanFitResults(self, fit)
+        fit = StanFitResults(self, fit)
+        fit.time_samp = elapsed
+        return fit
+
+    def mode(self, **kwds):
+        """
+        Return the mode of the posterior PDF as an object with both a dict
+        and an attribute interface to the parameter values.
+
+        Any keyword arguments are passed to PyStan's optimizing() method.
+        See the docstring for self.model.optimizing for more info.  Do
+        not provide an `as_vector` argument.
+        """
+        start_time = timeit.default_timer()
+        mode_dict = self.model.optimizing(data=self.data, as_vector=False, **kwds)
+        elapsed = timeit.default_timer() - start_time
+        point = ImmutableAttrDict(mode_dict['par'])
+        point.log_p = mode_dict['value']
+        point.time_opt = elapsed
+        return point
 
